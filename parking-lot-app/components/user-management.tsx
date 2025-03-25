@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,85 +26,68 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { supabase } from "@/lib/supabase"
 
 interface UserManagementProps {
   userRole: "super_admin" | "company_admin" | "regular_user"
 }
 
-// Mock data for users
-const usersData = [
-  {
-    id: 1,
-    firstName: "John",
-    lastName: "Smith",
-    email: "john.smith@techsolutions.com",
-    role: "Regular User",
-    company: "Tech Solutions Inc.",
-    isActive: true,
-    isAvailable: false,
-  },
-  {
-    id: 2,
-    firstName: "Sarah",
-    lastName: "Johnson",
-    email: "sarah.johnson@techsolutions.com",
-    role: "Regular User",
-    company: "Tech Solutions Inc.",
-    isActive: true,
-    isAvailable: true,
-  },
-  {
-    id: 3,
-    firstName: "Michael",
-    lastName: "Brown",
-    email: "michael.brown@globallogistics.com",
-    role: "Company Administrator",
-    company: "Global Logistics Corp.",
-    isActive: true,
-    isAvailable: false,
-  },
-  {
-    id: 4,
-    firstName: "Jane",
-    lastName: "Doe",
-    email: "jane.doe@globallogistics.com",
-    role: "Regular User",
-    company: "Global Logistics Corp.",
-    isActive: true,
-    isAvailable: false,
-  },
-  {
-    id: 5,
-    firstName: "David",
-    lastName: "Wilson",
-    email: "david.wilson@innovatehub.com",
-    role: "Company Administrator",
-    company: "Innovate Hub",
-    isActive: true,
-    isAvailable: false,
-  },
-  {
-    id: 6,
-    firstName: "Emily",
-    lastName: "Davis",
-    email: "emily.davis@innovatehub.com",
-    role: "Regular User",
-    company: "Innovate Hub",
-    isActive: false,
-    isAvailable: true,
-  },
-]
+interface User {
+  id: number
+  firstName: string
+  lastName: string
+  email: string
+  role: string
+  company: string
+  isActive: boolean
+  isAvailable: boolean
+}
 
 export function UserManagement({ userRole }: UserManagementProps) {
   const [isAddUserDialogOpen, setIsAddUserDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
+  const [newUser, setNewUser] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    role: "",
+    company: "",
+  })
 
-  // Filter users based on user role and search term
-  const filteredUsers = usersData.filter((user) => {
-    // Filter by user role
-    if (userRole === "company_admin" && user.company !== "Tech Solutions Inc.") return false
+  useEffect(() => {
+    // Fetch users from Supabase
+    const fetchUsers = async () => {
+      setLoading(true)
+      try {
+        // Build query based on user role
+        let query = supabase.from('users').select('*')
+        
+        if (userRole === "company_admin") {
+          query = query.eq('company', 'Tech Solutions Inc.')
+        }
+        
+        const { data, error } = await query
+        
+        if (error) {
+          console.error("Error fetching users:", error)
+          return
+        }
+        
+        setUsers(data || [])
+      } catch (error) {
+        console.error("Error fetching users:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
 
-    // Filter by search term
+    fetchUsers()
+  }, [userRole])
+
+  // Filter users based on search term
+  const filteredUsers = users.filter((user) => {
     if (searchTerm === "") return true
 
     return (
@@ -115,9 +98,61 @@ export function UserManagement({ userRole }: UserManagementProps) {
     )
   })
 
-  const handleAddUser = () => {
-    // Logic for adding a user would go here
+  const handleAddUser = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .insert([{
+          first_name: newUser.firstName,
+          last_name: newUser.lastName,
+          email: newUser.email,
+          role: newUser.role,
+          company: userRole === "super_admin" ? newUser.company : "Tech Solutions Inc.",
+          is_active: true,
+          is_available: true
+        }])
+        .select()
+
+      if (error) {
+        console.error("Error adding user:", error)
+        return
+      }
+
+      // Add the new user to the state
+      if (data && data.length > 0) {
+        setUsers([...users, {
+          id: data[0].id,
+          firstName: data[0].first_name,
+          lastName: data[0].last_name,
+          email: data[0].email,
+          role: data[0].role,
+          company: data[0].company,
+          isActive: data[0].is_active,
+          isAvailable: data[0].is_available
+        }])
+      }
+    } catch (error) {
+      console.error("Error adding user:", error)
+    }
+
+    // Reset form and close dialog
+    setNewUser({
+      firstName: "",
+      lastName: "",
+      email: "",
+      role: "",
+      company: "",
+    })
     setIsAddUserDialogOpen(false)
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { id, value } = e.target
+    setNewUser({ ...newUser, [id]: value })
+  }
+
+  const handleSelectChange = (name: string, value: string) => {
+    setNewUser({ ...newUser, [name]: value })
   }
 
   return (
@@ -146,41 +181,57 @@ export function UserManagement({ userRole }: UserManagementProps) {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="firstName">First Name</Label>
-                    <Input id="firstName" placeholder="e.g., John" />
+                    <Input 
+                      id="firstName" 
+                      placeholder="e.g., John" 
+                      value={newUser.firstName}
+                      onChange={handleInputChange}
+                    />
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="lastName">Last Name</Label>
-                    <Input id="lastName" placeholder="e.g., Smith" />
+                    <Input 
+                      id="lastName" 
+                      placeholder="e.g., Smith" 
+                      value={newUser.lastName}
+                      onChange={handleInputChange}
+                    />
                   </div>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" placeholder="e.g., john.smith@example.com" />
+                  <Input 
+                    id="email" 
+                    type="email" 
+                    placeholder="e.g., john.smith@example.com" 
+                    value={newUser.email}
+                    onChange={handleInputChange}
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="role">Role</Label>
-                  <Select>
+                  <Select onValueChange={(value) => handleSelectChange("role", value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select a role" />
                     </SelectTrigger>
                     <SelectContent>
-                      {userRole === "super_admin" && <SelectItem value="super_admin">Super Administrator</SelectItem>}
-                      <SelectItem value="company_admin">Company Administrator</SelectItem>
-                      <SelectItem value="regular_user">Regular User</SelectItem>
+                      {userRole === "super_admin" && <SelectItem value="Super Administrator">Super Administrator</SelectItem>}
+                      <SelectItem value="Company Administrator">Company Administrator</SelectItem>
+                      <SelectItem value="Regular User">Regular User</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 {userRole === "super_admin" && (
                   <div className="grid gap-2">
                     <Label htmlFor="company">Company</Label>
-                    <Select>
+                    <Select onValueChange={(value) => handleSelectChange("company", value)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a company" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="tech">Tech Solutions Inc.</SelectItem>
-                        <SelectItem value="global">Global Logistics Corp.</SelectItem>
-                        <SelectItem value="innovate">Innovate Hub</SelectItem>
+                        <SelectItem value="Tech Solutions Inc.">Tech Solutions Inc.</SelectItem>
+                        <SelectItem value="Global Logistics Corp.">Global Logistics Corp.</SelectItem>
+                        <SelectItem value="Innovate Hub">Innovate Hub</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -222,49 +273,63 @@ export function UserManagement({ userRole }: UserManagementProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredUsers.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>
-                      {user.firstName} {user.lastName}
-                    </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.role}</TableCell>
-                    {userRole === "super_admin" && <TableCell>{user.company}</TableCell>}
-                    <TableCell>
-                      <Badge variant={user.isActive ? "default" : "secondary"}>
-                        {user.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={user.isAvailable ? "success" : "outline"}
-                        className={user.isAvailable ? "bg-green-500 hover:bg-green-600" : ""}
-                      >
-                        {user.isAvailable ? "Available" : "Assigned"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0">
-                            <span className="sr-only">Open menu</span>
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem>Edit User</DropdownMenuItem>
-                          <DropdownMenuItem>Reset Password</DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem>{user.isActive ? "Deactivate" : "Activate"}</DropdownMenuItem>
-                          <DropdownMenuItem>
-                            {user.isAvailable ? "Mark as Assigned" : "Mark as Available"}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={userRole === "super_admin" ? 7 : 6} className="text-center py-10">
+                      Loading users...
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : filteredUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={userRole === "super_admin" ? 7 : 6} className="text-center py-10">
+                      No users found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredUsers.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell>
+                        {user.firstName} {user.lastName}
+                      </TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>{user.role}</TableCell>
+                      {userRole === "super_admin" && <TableCell>{user.company}</TableCell>}
+                      <TableCell>
+                        <Badge variant={user.isActive ? "default" : "secondary"}>
+                          {user.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={user.isAvailable ? "default" : "outline"}
+                          className={user.isAvailable ? "bg-green-500 hover:bg-green-600 text-white" : ""}
+                        >
+                          {user.isAvailable ? "Available" : "Assigned"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                              <span className="sr-only">Open menu</span>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuItem>Edit User</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem>Reset Password</DropdownMenuItem>
+                            <DropdownMenuItem>
+                              {user.isActive ? "Deactivate" : "Activate"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,92 +26,73 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { supabase } from "@/lib/supabase"
 
 interface VehicleManagementProps {
   userRole: "super_admin" | "company_admin" | "regular_user"
 }
 
-// Mock data for vehicles
-const vehiclesData = [
-  {
-    id: 1,
-    licensePlate: "TS123BC",
-    make: "Toyota",
-    model: "Camry",
-    color: "Blue",
-    year: 2020,
-    company: "Tech Solutions Inc.",
-    user: "John Smith",
-    status: "Parked",
-  },
-  {
-    id: 2,
-    licensePlate: "TS456CD",
-    make: "Toyota",
-    model: "Corolla",
-    color: "Silver",
-    year: 2019,
-    company: "Tech Solutions Inc.",
-    user: "Sarah Johnson",
-    status: "Not Parked",
-  },
-  {
-    id: 3,
-    licensePlate: "GL789EF",
-    make: "Honda",
-    model: "Civic",
-    color: "Red",
-    year: 2021,
-    company: "Global Logistics Corp.",
-    user: "Jane Doe",
-    status: "Parked",
-  },
-  {
-    id: 4,
-    licensePlate: "GL012HI",
-    make: "Honda",
-    model: "Accord",
-    color: "Black",
-    year: 2022,
-    company: "Global Logistics Corp.",
-    user: "Michael Brown",
-    status: "Not Parked",
-  },
-  {
-    id: 5,
-    licensePlate: "IH345JK",
-    make: "Ford",
-    model: "Focus",
-    color: "White",
-    year: 2018,
-    company: "Innovate Hub",
-    user: "David Wilson",
-    status: "Not Parked",
-  },
-  {
-    id: 6,
-    licensePlate: "IH678LM",
-    make: "Ford",
-    model: "Fusion",
-    color: "Gray",
-    year: 2020,
-    company: "Innovate Hub",
-    user: "Emily Davis",
-    status: "Not Parked",
-  },
-]
+interface Vehicle {
+  id: number
+  licensePlate: string
+  make: string
+  model: string
+  color: string
+  year: number
+  company: string
+  user: string
+  status: string
+}
 
 export function VehicleManagement({ userRole }: VehicleManagementProps) {
   const [isAddVehicleDialogOpen, setIsAddVehicleDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [loading, setLoading] = useState(true)
+  const [newVehicle, setNewVehicle] = useState({
+    licensePlate: "",
+    make: "",
+    model: "",
+    color: "",
+    year: new Date().getFullYear(),
+    company: "",
+    user: "",
+  })
 
-  // Filter vehicles based on user role and search term
-  const filteredVehicles = vehiclesData.filter((vehicle) => {
-    // Filter by user role
-    if (userRole === "company_admin" && vehicle.company !== "Tech Solutions Inc.") return false
-    if (userRole === "regular_user" && vehicle.user !== "John Smith") return false
+  useEffect(() => {
+    // Fetch vehicles from Supabase
+    const fetchVehicles = async () => {
+      setLoading(true)
+      try {
+        // Build query based on user role
+        let query = supabase.from('vehicles').select('*')
+        
+        if (userRole === "company_admin") {
+          query = query.eq('company', 'Tech Solutions Inc.')
+        } else if (userRole === "regular_user") {
+          query = query.eq('user', 'John Smith')
+        }
+        
+        const { data, error } = await query
+        
+        if (error) {
+          console.error("Error fetching vehicles:", error)
+          return
+        }
+        
+        setVehicles(data || [])
+      } catch (error) {
+        console.error("Error fetching vehicles:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
 
-    // Filter by search term
+    fetchVehicles()
+  }, [userRole])
+
+  // Filter vehicles based on search term
+  const filteredVehicles = vehicles.filter((vehicle) => {
     if (searchTerm === "") return true
 
     return (
@@ -122,9 +103,65 @@ export function VehicleManagement({ userRole }: VehicleManagementProps) {
     )
   })
 
-  const handleAddVehicle = () => {
-    // Logic for adding a vehicle would go here
+  const handleAddVehicle = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('vehicles')
+        .insert([{
+          license_plate: newVehicle.licensePlate,
+          make: newVehicle.make,
+          model: newVehicle.model,
+          color: newVehicle.color,
+          year: newVehicle.year,
+          company: userRole === "super_admin" ? newVehicle.company : "Tech Solutions Inc.",
+          user: (userRole === "super_admin" || userRole === "company_admin") ? newVehicle.user : "John Smith",
+          status: "Not Parked"
+        }])
+        .select()
+
+      if (error) {
+        console.error("Error adding vehicle:", error)
+        return
+      }
+
+      // Add the new vehicle to the state
+      if (data && data.length > 0) {
+        setVehicles([...vehicles, {
+          id: data[0].id,
+          licensePlate: data[0].license_plate,
+          make: data[0].make,
+          model: data[0].model,
+          color: data[0].color,
+          year: data[0].year,
+          company: data[0].company,
+          user: data[0].user,
+          status: data[0].status
+        }])
+      }
+    } catch (error) {
+      console.error("Error adding vehicle:", error)
+    }
+
+    // Reset form and close dialog
+    setNewVehicle({
+      licensePlate: "",
+      make: "",
+      model: "",
+      color: "",
+      year: new Date().getFullYear(),
+      company: "",
+      user: "",
+    })
     setIsAddVehicleDialogOpen(false)
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { id, value } = e.target
+    setNewVehicle({ ...newVehicle, [id]: value })
+  }
+
+  const handleSelectChange = (name: string, value: string) => {
+    setNewVehicle({ ...newVehicle, [name]: value })
   }
 
   return (
@@ -157,38 +194,64 @@ export function VehicleManagement({ userRole }: VehicleManagementProps) {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="licensePlate">License Plate</Label>
-                    <Input id="licensePlate" placeholder="e.g., ABC123" />
+                    <Input 
+                      id="licensePlate" 
+                      placeholder="e.g., ABC123" 
+                      value={newVehicle.licensePlate}
+                      onChange={handleInputChange}
+                    />
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="year">Year</Label>
-                    <Input id="year" type="number" placeholder="e.g., 2022" />
+                    <Input 
+                      id="year" 
+                      type="number" 
+                      placeholder="e.g., 2022" 
+                      value={newVehicle.year}
+                      onChange={handleInputChange}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="make">Make</Label>
-                    <Input id="make" placeholder="e.g., Toyota" />
+                    <Input 
+                      id="make" 
+                      placeholder="e.g., Toyota" 
+                      value={newVehicle.make}
+                      onChange={handleInputChange}
+                    />
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="model">Model</Label>
-                    <Input id="model" placeholder="e.g., Camry" />
+                    <Input 
+                      id="model" 
+                      placeholder="e.g., Camry" 
+                      value={newVehicle.model}
+                      onChange={handleInputChange}
+                    />
                   </div>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="color">Color</Label>
-                  <Input id="color" placeholder="e.g., Blue" />
+                  <Input 
+                    id="color" 
+                    placeholder="e.g., Blue" 
+                    value={newVehicle.color}
+                    onChange={handleInputChange}
+                  />
                 </div>
                 {(userRole === "super_admin" || userRole === "company_admin") && (
                   <div className="grid gap-2">
                     <Label htmlFor="user">Assign to User</Label>
-                    <Select>
+                    <Select onValueChange={(value) => handleSelectChange("user", value)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a user" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="john">John Smith</SelectItem>
-                        <SelectItem value="sarah">Sarah Johnson</SelectItem>
-                        <SelectItem value="michael">Michael Brown</SelectItem>
+                        <SelectItem value="John Smith">John Smith</SelectItem>
+                        <SelectItem value="Sarah Johnson">Sarah Johnson</SelectItem>
+                        <SelectItem value="Michael Brown">Michael Brown</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -196,14 +259,14 @@ export function VehicleManagement({ userRole }: VehicleManagementProps) {
                 {userRole === "super_admin" && (
                   <div className="grid gap-2">
                     <Label htmlFor="company">Company</Label>
-                    <Select>
+                    <Select onValueChange={(value) => handleSelectChange("company", value)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a company" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="tech">Tech Solutions Inc.</SelectItem>
-                        <SelectItem value="global">Global Logistics Corp.</SelectItem>
-                        <SelectItem value="innovate">Innovate Hub</SelectItem>
+                        <SelectItem value="Tech Solutions Inc.">Tech Solutions Inc.</SelectItem>
+                        <SelectItem value="Global Logistics Corp.">Global Logistics Corp.</SelectItem>
+                        <SelectItem value="Innovate Hub">Innovate Hub</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -246,38 +309,52 @@ export function VehicleManagement({ userRole }: VehicleManagementProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredVehicles.map((vehicle) => (
-                  <TableRow key={vehicle.id}>
-                    <TableCell>{vehicle.licensePlate}</TableCell>
-                    <TableCell>
-                      {vehicle.make} {vehicle.model}
-                    </TableCell>
-                    <TableCell>{vehicle.color}</TableCell>
-                    <TableCell>{vehicle.year}</TableCell>
-                    {userRole !== "regular_user" && <TableCell>{vehicle.user}</TableCell>}
-                    {userRole === "super_admin" && <TableCell>{vehicle.company}</TableCell>}
-                    <TableCell>
-                      <Badge variant={vehicle.status === "Parked" ? "default" : "outline"}>{vehicle.status}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0">
-                            <span className="sr-only">Open menu</span>
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem>Edit Vehicle</DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem>Deactivate</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={userRole === "super_admin" ? 8 : userRole === "company_admin" ? 7 : 6} className="text-center py-10">
+                      Loading vehicles...
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : filteredVehicles.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={userRole === "super_admin" ? 8 : userRole === "company_admin" ? 7 : 6} className="text-center py-10">
+                      No vehicles found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredVehicles.map((vehicle) => (
+                    <TableRow key={vehicle.id}>
+                      <TableCell>{vehicle.licensePlate}</TableCell>
+                      <TableCell>
+                        {vehicle.make} {vehicle.model}
+                      </TableCell>
+                      <TableCell>{vehicle.color}</TableCell>
+                      <TableCell>{vehicle.year}</TableCell>
+                      {userRole !== "regular_user" && <TableCell>{vehicle.user}</TableCell>}
+                      {userRole === "super_admin" && <TableCell>{vehicle.company}</TableCell>}
+                      <TableCell>
+                        <Badge variant={vehicle.status === "Parked" ? "default" : "outline"}>{vehicle.status}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                              <span className="sr-only">Open menu</span>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuItem>Edit Vehicle</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem>Deactivate</DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
